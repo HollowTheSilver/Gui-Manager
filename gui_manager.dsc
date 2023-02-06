@@ -9,9 +9,9 @@
 #
 # @Htools               LLC
 # @author               HollowTheSilver
-# @date                 01/19/2023
-# @script-version       DEV-1.0.4
-# @denizen-build-1.2.4  REL-1771
+# @date                 02/06/2023
+# @script-version       DEV-1.0.5
+# @denizen-build-1.2.6  REL-1783
 #
 #
 # ------------------------------------------------------------------------------------------------------------------------------ +
