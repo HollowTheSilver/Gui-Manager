@@ -1962,22 +1962,7 @@ gui_manager_command:
         - determine <[result].if_null[<list>]>
     script:
 		# |------- command data -------| #
-        #- define generic <inventory[generic[size=27]]>
-        #- define unique <inventory[citizens_editor_gui_skin_editor]>
-        #- narrate <[generic]>
-        #- narrate <[unique].list_contents>
-        #- flag <player> gui_manager.session.generic:true
-        #- adjust <[generic]> contents:<list[snowball|stick]>
-        #- adjust <[generic]> contents:<list.pad_right[<[generic].size>].replace[<empty>].with[<item[air]>]>
-        #- inventory open destination:<[generic]>
-        #- narrate <[generic]>
-        - define list <list[test|test2|test3]>
-        - definemap map:
-            test: <empty>
-            test2: <empty>
-            test3: <empty>
-        - define element testing
-        - narrate "element: <[element].unescaped><&nl>list: <[list].unescaped.before[<&at>]><&nl>map: <[map].unescaped.before[<&at>]>"
+        - narrate placeholder
 
 
 
