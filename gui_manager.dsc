@@ -1,0 +1,2147 @@
+# + ----------------------------------------------------------------------------------------------------------------------------------- +
+# |
+# |
+# |  Gui Manager - Denizen Library
+# |
+# |
+# + ---------------------------------------------------------------------------------------------------------------------------------- +
+#
+#
+# @Htools               LLC
+# @author               HollowTheSilver
+# @date                 11/21/2023
+# @script-version       DEV-2.2.3
+# @denizen-build-1.2.8  REL-1794
+#
+#
+# ------------------------------------------------------------------------------------------------------------------------------------ +
+#
+#
+# Description:
+#   - A collection of denizen scripts designed to manage multi-instanced hierarchical interfaces, that aims to streamline the front end
+#   - design pattern of gui type inventories. The manager provides caching, tracking, updating and parsing capabilities for various gui
+#   - operations within a single, scalable framework.
+#
+#
+# ------------------------------------------------------------------------------------------------------------------------------------ +
+#
+#
+# Installation:
+#   - Upload the 'Gui Manager' folder into your 'scripts' directory and reload denizen with /ex reload.
+#
+#
+# Help:
+#   - For library documentation please visit: https://htools/gui-manager/docs (coming soon)
+#
+#
+# | ----------------------------------------------------  GUI MANAGER | CONFIG  ---------------------------------------------------- | #
+
+
+
+gui_manager:
+    ####################################################################
+    # | -------------------  |  Gui Manager  |  -------------------- | #
+    ####################################################################
+    # | ---                                                      --- | #
+    # | ---                    Configuration                     --- | #
+    # | ---                                                      --- | #
+    ####################################################################
+    type: world
+    debug: false
+    data:
+        name: Gui<&sp>Manager
+        author: HollowTheSilver
+        version: 2.1.1
+        config:
+            prefixes:
+                main: <&lb>Gui<&sp>Manager<&rb>
+            sounds:
+                left-click-button: ui_button_click
+                confirm-dialog: entity_experience_orb_pickup
+            session:
+                max: 50
+            log:
+                dir: plugins/Denizen/data/logs/gui_manager/
+                max: 10
+
+
+
+# | ----------------------------------------------  GUI MANAGER | EVENTS  ---------------------------------------------- | #
+
+
+
+    events:
+        ##############################################
+        # | ---  |      manager events      |  --- | #
+        ##############################################
+        on player flagged:gui_manager.id clicks in inventory:
+            - determine cancelled passively
+
+        on player flagged:gui_manager.id closes inventory:
+            # |------- session check -------| #
+            - define destroy <player.flag[gui_manager.destroy].if_null[true]>
+            - flag <player> gui_manager.destroy:!
+            - if ( <[destroy]> ):
+                # |------- cache -------| #
+                - define debug <player.flag[gui_manager.debug].if_null[false]>
+                - define session-id <player.flag[gui_manager.id].if_null[null]>
+                - flag <player> gui_manager.sessions.<[session-id]>.stop:<util.time_now.format[MM/dd/yy hh:mm:ss a]>
+                # |------- desroy -------| #
+                - flag <player> gui_manager.id:!
+                - flag <player> gui_manager.generic:!
+                - flag <player> gui_manager.unique:!
+                # |------- log -------| #
+                - if ( <[debug]> ):
+                    - ~run gui_manager_log def.session-id:<[session-id]> def.task:stop save:log
+                    - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+                    - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+                    - define message "<[log_prefix]> session '<[session-id]>' stopped."
+                    - debug log <[message]>
+                    - log <[message]> type:info file:<[log_path]>
+                    - narrate "<&nl>current: null<&nl>next: <list><&nl>previous: <list><&nl>"
+
+
+
+# | ----------------------------------------------  GUI MANAGER | COMMAND  ---------------------------------------------- | #
+
+
+
+gui_manager_command:
+	##################################################
+	# | ---  |        command script        |  --- | #
+	##################################################
+    type: command
+    debug: false
+    name: guimanager
+    description: Gui Manager library command.
+    usage: /guimanager
+    aliases:
+        - gmanager
+        - guim
+        - gm
+    tab complete:
+		# |------- procedural tab completion -------| #
+        - if ( <context.raw_args.trim> == <empty> ) || ( <context.args.size> == 1 ) && ( not <context.raw_args.ends_with[<&sp>]> ):
+            - define result:|:debug|session|help
+        - else:
+            - choose <context.args.get[1].if_null[null]>:
+                - case session:
+                    - choose <context.args.get[2].if_null[null]>:
+                        - default:
+                            - define result:|:<list.include[init|end|suspend|view|delete|json]>
+                        - case init view delete json:
+                            - define context <context.args.get[2]>
+                            - define players <server.players.parse[name].map_with[<server.players>]>
+                            - if ( <context.args.get[3].if_null[null]> == null ):
+                                - define result:|:<[players].keys>
+                            - else:
+                                - define target <[players].get[<context.args.exclude[<context.args.get[1].to[2]>].max[2].separated_by[<&sp>]>].if_null[null]>
+                                - define session-id <context.args.last>
+                                - define valid-id <[session-id].equals[all].if_true[true].if_false[<[session-id].split[-].size.equals[5]>]>
+                                - if ( <[target]> == null ) && ( <[valid-id]> ):
+                                    - define target <[players].get[<context.args.exclude[<context.args.get[1].to[2]>].max[2].exclude[<[session-id]>].separated_by[<&sp>]>].if_null[null]>
+                                - if ( <[target]> == null ):
+                                    - define result:|:<list.include[invalid-player]>
+                                - else:
+                                    - define sessions <[target].flag[gui_manager.sessions].if_null[<map>]>
+                                    - if ( <[sessions].is_empty> ):
+                                        - define result:|:<list.include[no-sessions]>
+                                    - else if ( <[valid-id]> ):
+                                        - if ( <[session-id]> == all ) || ( <[sessions].keys> contains <[session-id]> ):
+                                            - define result:!
+                                        - else:
+                                            - define result:|:<list.include[invalid-session-id]>
+                                    - else:
+                                        - define result:|:<[sessions].keys.include[all]>
+        - determine <[result].if_null[<list>]>
+    script:
+		# |------- command data -------| #
+        - narrate placeholder
+
+
+
+# | ----------------------------------------------  GUI MANAGER | TASKS  ---------------------------------------------- | #
+
+
+
+gui_manager_init:
+    #########################################################
+    # | ---  |       initialize session task       |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  session-id                    --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  bool                           --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: false  --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:init save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - define existing-id <player.flag[gui_manager.id].if_null[null]>
+        # |------- purge -------| #
+        - if ( <util.random.int[0].to[100]> == 1 ):
+            - inject gui_manager_purge_logs
+        # |------- initialize -------| #
+        - if ( <player.open_inventory.equals[<player.inventory>]> ) && ( <[existing-id]> != null ) && ( <[session-id]> == <[existing-id]> ):
+            - flag <player> gui_manager.sessions.<[session-id]>.start:<util.time_now.format[MM/dd/yy hh:mm:ss a]>
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session '<[session-id]>' resumed."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+            - determine true
+        # |------- set session -------| #
+        - else if ( <[existing-id]> != null ) && ( <[session-id]> != null ) && ( <[session-id]> != <[existing-id]> ):
+            - flag <player> gui_manager.id:<[session-id]>
+            - flag <player> gui_manager.sessions.<[session-id]>.start:<util.time_now.format[MM/dd/yy hh:mm:ss a]>
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session '<[existing-id]>' interrupted."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+                - define log_prefix "<script[gui_manager].parsed_key[data.config.prefixes.main]> [<[session-id]>] <player.name> - init() -<&gt>"
+                - define message "<[log_prefix]> session '<[session-id]>' initialized."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+            - determine true
+        - else if ( <[existing-id]> == null ) && ( <[session-id]> == null ):
+            - flag <player> gui_manager.id:<util.random_uuid>
+            - define session-id <player.flag[gui_manager.id].if_null[null]>
+            - flag <player> gui_manager.destroy:!
+            - flag <player> gui_manager.sessions.<[session-id]>.start:<util.time_now.format[MM/dd/yy hh:mm:ss a]>
+            - if ( <[debug]> ):
+                - define log_prefix "<script[gui_manager].parsed_key[data.config.prefixes.main]> [<[session-id]>] <player.name> - init() -<&gt>"
+                - define message "<[log_prefix]> session '<[session-id]>' initialized."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+            - determine true
+        - else:
+            - determine false
+
+
+gui_manager_stop:
+    #########################################################
+    # | ---  |          stop session task          |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  session-id                    --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  none                           --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: true   --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        - if ( not <[session-id].exists> ):
+            - define session-id <player.flag[gui_manager.id].if_null[null]>
+        - if ( <[session-id]> != null ):
+            # |------- end session -------| #
+            - flag <player> gui_manager.destroy:true
+            - inventory close
+
+
+
+gui_manager_suspend:
+    ########################################################
+    # | ---  |        suspend session task        |  --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Required:  none                         --- | #
+    # | ---                                          --- | #
+    # | ---  Optional:  session-id                   --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Returns:  none                          --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Run: true | Await: true | Inject: true  --- | #
+    # | ---                                          --- | #
+    ########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        # |------- close gui -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( not <[session-id].exists> ):
+            - define session-id <player.flag[gui_manager.id].if_null[null]>
+        - if ( <[session-id]> != null ):
+            - flag <player> gui_manager.destroy:false
+            - flag <player> gui_manager.generic:!
+            - flag <player> gui_manager.unique:!
+            - inventory close
+            - if ( <[debug]> ):
+                - ~run gui_manager_log def.task:suspend save:log
+                - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+                - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+                - define message "<[log_prefix]> session '<player.flag[gui_manager.id].if_null[null]>' suspended."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+
+
+
+gui_manager_open:
+    #######################################################################################################
+    # | ---  |                                   open gui task                                   |  --- | #
+    #######################################################################################################
+    # | ---                                                                                         --- | #
+    # | ---  Required:  none                                                                        --- | #
+    # | ---                                                                                         --- | #
+    # | ---  Optional:  session-id | prefix | gui-id | page | ignore | init | build | cache-reset   --- | #
+    # | ---             cache-clear | index | title | size | contents | list | fill | auto-title    --- | #
+    # | ---                                                                                         --- | #
+    #######################################################################################################
+    # | ---                                                                                         --- | #
+    # | ---  Returns:  bool                                                                         --- | #
+    # | ---                                                                                         --- | #
+    #######################################################################################################
+    # | ---                                                                                         --- | #
+    # | ---  Run: true | Await: true | Inject: false                                                --- | #
+    # | ---                                                                                         --- | #
+    #######################################################################################################
+    type: task
+    debug: false
+    definitions: session-id | prefix | gui-id | page | ignore | build | cache-reset | cache-clear | index | title | size | contents | list | fill | auto-title | context
+    script:
+        # |------- initialize -------| #
+        - ~run gui_manager_init def.session-id:<[session-id].if_null[null]>
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define missing-page <[page].exists.and[<[page].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> - open() -<&gt> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine false
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+            # |------- paginate -------| #
+            - ~run gui_manager_paginate def.build:<[build].if_null[true]> def.gui-id:<[gui-id].if_null[null]> def.page:<[page].if_null[null]> def.ignore:<[ignore].if_null[false]> def.cache-reset:<[cache-reset].if_null[false]> def.context:<[context].if_null[self]> save:target
+            - define target <entry[target].created_queue.determination.get[1].if_null[null]>
+            - if ( <[target]> == null ):
+                - determine false
+            # |------- update -------| #
+            - ~run gui_manager_update def.gui-id:<[id-type].contains_any_text[map|list].if_true[<[gui-id]>].if_false[<[target]>]> def.prefix:<[prefix].if_null[null]> def.index:<[index].if_null[null]> def.title:<[title].if_null[null]> def.size:<[size].if_null[null]> def.contents:<[contents].if_null[null]> def.list:<[list].if_null[null]> def.fill:<[fill].if_null[null]> def.auto-title:<[auto-title].if_null[true]> def.context:<[context].if_null[self]> save:validated
+            - define inventory <entry[validated].created_queue.determination.get[1].if_null[null]>
+            - if ( <[inventory]> == null ):
+                - define nav <player.flag[gui_manager.sessions.<[session-id]>.nav].if_null[<map>]>
+                - if ( <[nav].keys> contains backup ):
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav:<[nav].exclude[current|next|previous].include[<[nav].get[backup]>]>
+                - determine false
+            # |------- open -------| #
+            - define current <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[<[target]>]>
+            - flag <player> gui_manager.<player.flag[gui_manager.sessions.<[session-id]>.data.<[current]>.type].if_null[generic]>:<[current]>
+            - flag <player> gui_manager.destroy:false
+            - playsound <player> sound:<script[gui_manager].data_key[data.config.sounds].get[left-click-button]> pitch:1
+            - inventory open destination:<[inventory]>
+            - flag <player> gui_manager.destroy:!
+            - if ( <[debug]> ):
+                - if ( <player.flag[gui_manager.sessions.<[session-id]>.data.<[target]>.lists].size.if_null[<player.flag[gui_manager.sessions.<[session-id]>.data.<[target]>.contents].size.if_null[1]>]> > 1 ):
+                    - define message "<[log_prefix]> - <player.flag[gui_manager.sessions.<[session-id]>.nav.message].if_null[open]>() -<&gt> '<[target]>_<player.flag[gui_manager.sessions.<[session-id]>.data.<[target]>.index].if_null[1]>' opened."
+                - else:
+                    - define message "<[log_prefix]> - <player.flag[gui_manager.sessions.<[session-id]>.nav.message].if_null[open]>() -<&gt> '<[target]>' opened."
+                - debug log <[message]>
+                - narrate "<&nl>current: <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]><&nl>next: <player.flag[gui_manager.sessions.<[session-id]>.nav.next].if_null[<list>]><&nl>previous: <player.flag[gui_manager.sessions.<[session-id]>.nav.previous].if_null[<list>]><&nl>"
+                - log <[message]> type:info file:<[log_path]>
+            - determine true
+
+
+
+gui_manager_paginate:
+    #######################################################################################
+    # | ---  |                           paginate task                           |  --- | #
+    #######################################################################################
+    # | ---                                                                         --- | #
+    # | ---  Required:  none                                                        --- | #
+    # | ---                                                                         --- | #
+    # | ---  Optional:  session-id | gui-id | page | ignore | build | cache-reset   --- | #
+    # | ---                                                                         --- | #
+    #######################################################################################
+    # | ---                                                                         --- | #
+    # | ---  Returns:  str                                                          --- | #
+    # | ---                                                                         --- | #
+    #######################################################################################
+    # | ---                                                                         --- | #
+    # | ---  Run: true | Await: true | Inject: false                                --- | #
+    # | ---                                                                         --- | #
+    #######################################################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | page | ignore | build | cache-reset | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define missing-page <[page].exists.and[<[page].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - define page-type <[missing-page].if_true[null].if_false[<[page].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:paginate save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- session data -------| #
+            - ~run gui_manager_get_root def.gui-id:<[gui-id].if_null[null]> def.context:<[context].if_null[null]> save:root
+            - define root <entry[root].created_queue.determination.get[1].if_null[null]>
+            - define current <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[<[root]>]>
+            - define next-cache <player.flag[gui_manager.sessions.<[session-id]>.nav.next].if_null[<list>]>
+            - define previous-cache <player.flag[gui_manager.sessions.<[session-id]>.nav.previous].if_null[<list>]>
+            - define built <player.flag[gui_manager.sessions.<[session-id]>.built].if_null[<list>]>
+            - define blacklist <player.flag[gui_manager.sessions.<[session-id]>.blacklist].if_null[<list>]>
+            - define blacklisted <[blacklist].contains[<[current]>].if_null[false]>
+            - define rooted <[current].equals[<[root]>]>
+            - define nullified <[current].equals[null]>
+            # |------- validate -------| #
+            - if ( not <[nullified]> ) && ( <[missing-page]> && <[missing-id]> ):
+                # |------- default -------| #
+                - define gui-id <[current]>
+                - define missing-id false
+                - define id-type element
+            - else if ( <[missing-id]> ) && ( <[missing-page]> ):
+                - if ( <[debug]> ):
+                    - define message "<[log_prefix]> task requires either a gui to be opened, or a 'gui-id' or 'page' string to target."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine <[gui-id]>
+                #- determine null
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                # |------- validate id(s) -------| #
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+            # |------- parse target -------| #
+            - if ( not <[missing-id]> ):
+                # |------- type check -------| #
+                - if ( <[id-type].equals[map]> ) || ( <[id-type].equals[list]> ):
+                    - define ids <[gui-id].keys.exists.if_true[<[gui-id].keys>].if_false[<[gui-id]>]>
+                    - define gui-id <[ids].last.if_null[null]>
+                    - define id-type <[gui-id].object_type>
+                    - if ( <[current]> == null ) && ( <[next-cache].include[<[previous-cache]>].is_empty> ):
+                        - define blacklisted <[blacklist].contains[<[gui-id]>].if_null[false]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.nav.previous:<[ids].exclude[<[gui-id]>]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.nav.next:<[ids].exclude[<[ids].first>]>
+                        - if ( <[ignore].if_null[false]> ) && ( not <[blacklisted]> ):
+                            - flag <player> gui_manager.sessions.<[session-id]>.blacklist:->:<[gui-id]>
+                            - define blacklist:->:<[gui-id]>
+                            - define blacklisted true
+                        - if ( <[blacklisted]> ):
+                            - define ids <[ids].exclude[<[gui-id]>]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.built:<[ids]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.nav.current:<[gui-id]>
+                        - define current <[gui-id]>
+                        # |------- build -------| #
+                        - if ( not <[ids].is_empty> ):
+                            - ~run gui_manager_build def.gui-id:<[ids]> def.context:<[context].if_null[null]>
+                        - determine <[gui-id]>
+                - if ( not <[id-type].equals[element]> ):
+                    - if ( <[debug]> ):
+                        - define message "<[log_prefix]> failed to paginate '<[id-type].to_lowercase>'. gui-id must be of type string, list or map."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                    - if ( <[missing-page]> ):
+                        - determine null
+                    - define missing-id true
+                    - goto skip-id
+                - if ( <[previous-cache]> contains <[gui-id]> ):
+                    # |------- page-id -------| #
+                    - define parsed <element[previous_<[previous-cache].get[<[previous-cache].find[<[gui-id]>]>].to[<[previous-cache].find[<[previous-cache].last>]>]>].size.if_null[1].split[_]>
+                    - if ( <[parsed].last.is_integer> ):
+                        - define page-index <[parsed].last>
+                    - else:
+                        - define page-index 1
+                    - define page <[parsed].first.if_null[<[parsed].last>]>
+                    - narrate "detected: <[parsed].separated_by[_]>"
+                - else if ( <[current]> != <[gui-id]> ) && ( <[next-cache]> contains <[gui-id]> ):
+                    # |------- page-id -------| #
+                    - define index-current <[next-cache].find[<[current]>].equals[-1].if_true[1].if_false[<[next-cache].find[<[current]>]>]>
+                    - define index-target <[next-cache].find[<[gui-id]>].equals[-1].if_true[1].if_false[<[next-cache].find[<[gui-id]>]>]>
+                    - if ( not <[rooted]> && <[index-current].mod[<[index-target]>]> != 1 ) || ( <[rooted]> ):
+                        - define parsed <element[next_<[next-cache].get[<[index-current]>].to[<[index-target]>].size.if_null[1]>].split[_]>
+                        - define page <[parsed].first>
+                        - define page-index <[parsed].last>
+                        - narrate "detected: <[parsed].separated_by[_]>"
+            - mark skip-id
+            - if ( <[missing-id]> ) && ( not <[missing-page]> ):
+                - if ( not <[page-type].equals[element]> ):
+                    - if ( <[debug]> ):
+                        - define message "<[log_prefix]> page must be of type element. Object type '<[page-type].to_lowercase>' ignored."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                    - determine null
+                - define parsable <[page].replace_text[regex:<&sp>|-].with[_].if_null[<[page]>]>
+                - define parsed <[parsable].split[_].if_null[<list>]>
+                - if ( <[parsed].last.is_integer> ):
+                    - define page-index <[parsed].last>
+                    - define page <[parsed].first>
+                - else:
+                    - define page-index 1
+                - if ( not <list[next|prev|previous].contains[<[page]>]> ):
+                    - if ( <[debug]> ):
+                        # |------- invalid page -------| #
+                        - define message "<[log_prefix]> page '<[page]>' is not a valid keyword."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                    - determine null
+            # |------- get target -------| #
+            - choose <[page].if_null[null]>:
+                - case next:
+                    # |------- next-cache -------| #
+                    - if ( <[next-cache]> contains <[current]> ):
+                        - define cached <[next-cache].exclude[<[previous-cache].include[<[current]>]>].get[1].to[<[page-index].if_null[1]>].if_null[<list>]>
+                    - else:
+                        - define cached <[next-cache].get[1].to[<[page-index]>].if_null[<list>]>
+                    - define target <[cached].last.if_null[null]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.message:next
+                - case previous prev:
+                    # |------- previous-cache -------| #
+                    - define removed <[previous-cache].reverse.get[1].to[<[page-index].if_null[1]>].reverse.if_null[<list>]>
+                    - define cached <[previous-cache].reverse.remove[1].to[<[page-index].if_null[1]>].reverse.if_null[<list>]>
+                    - define target <[removed].first.if_null[null]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.message:prev
+                - default:
+                    # |------- default -------| #
+                    - define target <[gui-id]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.message:open
+            # |------- validate target -------| #
+            - define blacklisted-target <[blacklist].contains[<[target]>].if_null[false]>
+            - definemap backup:
+                current: <[current]>
+                next: <[next-cache]>
+                previous: <[previous-cache]>
+            - flag <player> gui_manager.sessions.<[session-id]>.nav.backup:<[backup]>
+            - if ( <[target].if_null[null]> == null ):
+                - if ( <[cached].is_empty> ) && ( not <player.open_inventory.equals[<player.inventory>]> ):
+                    # |------- close gui -------| #
+                    - playsound <player> sound:<script[gui_manager].data_key[data.config.sounds].get[left-click-button]> pitch:1
+                    - inject gui_manager_stop
+                - determine null
+            - else:
+                # |------- blacklist -------| #
+                - if ( not <[blacklisted-target]> ) && ( <[ignore].if_null[false]> ):
+                    - flag <player> gui_manager.sessions.<[session-id]>.blacklist:->:<[target]>
+                    - define blacklist:->:<[target]>
+                    - define blacklisted-target true
+                # |------- paginate -------| #
+                - choose <[page].if_null[null]>:
+                    - case next:
+                        - if ( not <[blacklisted-target]> ):
+                            - if ( not <[blacklisted]> ) && ( not <[previous-cache].contains[<[current]>]> ):
+                                - define previous-cache:->:<[current]>
+                            - if ( <[page-index]> > 1 ):
+                                - define previous-cache <[previous-cache].include[<[cached].exclude[<[target]>]>]>
+                    - case previous prev:
+                        - if ( not <[blacklisted-target]> ) && ( <[current]> != <[root]> ) && ( <[cached].exists> ):
+                            - define previous-cache:!|:<[cached]>
+                            - if ( not <[next-cache].contains[<[current]>]> ) && ( not <[blacklisted]> ):
+                                - define next-cache:->:<[current]>
+                    - default:
+                        - if ( not <[blacklisted-target]> ):
+                            - if ( not <[blacklisted]> ) && ( not <[rooted]> ) && ( not <[nullified]> ):
+                                - if ( not <[next-cache].contains[<[current]>]> ):
+                                    - define next-cache:->:<[current]>
+                            - if ( not <[nullified]> ) && ( <[target]> != <[root]> ) && ( <[target]> != <[current]> ):
+                                - if ( <[next-cache].any> ):
+                                    # |------- validate next -------| #
+                                    - define cached <[next-cache].last>
+                                    - if ( not <[target].equals[<[cached]>]> ) && ( <[built].contains[<[target]>]> ):
+                                        # |------- lineage check -------| #
+                                        - ~run gui_manager_get_lineage def.gui-id:<[target]> context:<[context].if_null[null]> save:lineage
+                                        - define lineage <entry[lineage].created_queue.determination.get[1].exclude[<[root]>]>
+                                        - define next-cache <[lineage]>
+                                    - else if ( <[rooted]> ):
+                                        # |------- lineage check -------| #
+                                        - ~run gui_manager_get_lineage def.gui-id:<[cached]> context:<[context].if_null[null]> save:lineage
+                                        - define lineage <entry[lineage].created_queue.determination.get[1]>
+                                        - if ( not <[lineage].contains[<[target]>]> ):
+                                            - define next-cache <list>
+                                    - else if ( not <[target].equals[<[cached]>]> ) && ( <[current]> != <[cached]> ):
+                                        # |------- siblings check -------| #
+                                        - ~run gui_manager_get_siblings def.gui-id:<[cached]> context:<[context].if_null[null]> save:siblings
+                                        - define siblings <entry[siblings].created_queue.determination.get[1].if_null[<list>]>
+                                        - if ( <[siblings].any> ):
+                                            - define next-cache <[next-cache].exclude[<[siblings]>]>
+                                - if ( not <[next-cache].contains[<[target]>]> ):
+                                    # |------- next (add) -------| #
+                                    - define next-cache:->:<[target]>
+                                - if ( not <[blacklisted]> ) && ( not <[previous-cache].contains[<[current]>]> ):
+                                    # |------- previous (add) -------| #
+                                    - define previous-cache:->:<[current]>
+                                # |------- validate previous -------| #
+                                - define contrast <[next-cache].size.sub[<[previous-cache].size>]>
+                                - if ( <[contrast]> != 0 ):
+                                    - if ( <[contrast].starts_with[-]> ):
+                                        - define previous-cache <[previous-cache].reverse.remove[1].to[<[contrast].after[-]>].reverse>
+                                    - else:
+                                        - define previous-cache <[previous-cache].include[<[next-cache].exclude[<[target]>]>]>
+                - if ( <[cache-reset].if_null[false]> ):
+                    # |------- next-cache reset -------| #
+                    - define current-index <[next-cache].find[<[target]>].if_null[1]>
+                    - define last-index <[next-cache].find[<[next-cache].last.if_null[<[current-index]>]>]>
+                    - if ( <[next-cache].size> > 1 ) && ( <[last-index]> > <[current-index]> ):
+                        - define next-cache <[next-cache].remove[<[current-index].add[1]>].to[<[last-index]>].if_null[null]>
+                - if ( not <[blacklisted-target]> ):
+                    # |------- update nav flags -------| #
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.current:<[target]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.next:<[next-cache]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.previous:<[previous-cache]>
+                    # |------- build target -------| #
+                    - if ( not <[built].contains[<[target]>]> ) && ( <[build].if_null[true]> ):
+                        - ~run gui_manager_build def.gui-id:<[target]> def.context:<[context].if_null[null]>
+                - determine <[target]>
+
+
+
+gui_manager_update:
+    #######################################################################
+    # | ---  |                  update gui task                  |  --- | #
+    #######################################################################
+    # | ---                                                         --- | #
+    # | ---  Required:  gui-id                                      --- | #
+    # | ---                                                         --- | #
+    # | ---  Optional:  session-id | prefix | index | title | size  --- | #
+    # | ---             contents | list | fill | auto-title         --- | #
+    # | ---                                                         --- | #
+    #######################################################################
+    # | ---                                                         --- | #
+    # | ---  Returns:  inventory tag | null                         --- | #
+    # | ---                                                         --- | #
+    #######################################################################
+    # | ---                                                         --- | #
+    # | ---  Run: true | Await: true | Inject: false                --- | #
+    # | ---                                                         --- | #
+    #######################################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | prefix | index | title | size | contents | list | fill | auto-title | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:update save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- validate id(s) -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                # |------- validate id(s) -------| #
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+            # |------- vaidate gui-id(s) -------| #
+            - if ( <[missing-id]> ):
+                - if ( <[debug]> ):
+                    # |------- missing parameter 'gui-id' (null) -------| #
+                    - define message "<[log_prefix]> missing parameter 'gui-id'."
+                    - debug log <[message]>
+                    - log <[message]> type:warning file:<[log_path]>
+                - determine null
+            - else if ( <[id-type].equals[map]> ) || ( <[id-type].equals[element]> && <[gui-id].starts_with[map&at].if_null[false]> ):
+                - define gui-ids <[gui-id].keys.if_null[<list>]>
+                - define kwargs <[gui-id].if_null[<map>]>
+            - else if ( <[id-type].equals[list]> ) || ( <[id-type].equals[element]> && <[gui-id].starts_with[li&at].if_null[false]> ):
+                - define gui-ids <[gui-id].if_null[<list>]>
+                - define values <list.pad_right[<[gui-id].size.sub[1]>].replace[<empty>].with[<map>].include_single[<map[prefix=<[prefix].if_null[null]>;index=<[index].if_null[null]>;title=<[title].if_null[null]>;contents=<[contents].if_null[null]>;list=<[list].if_null[null]>;fill=<[fill].if_null[null]>]>]>
+                - define kwargs <[gui-ids].map_with[<[values]>]>
+            - else if ( <[id-type].equals[element]> ):
+                - define gui-ids:->:<[gui-id]>
+            # |------- adjust properties -------| #
+            - foreach <[gui-ids].if_null[<list>]> as:gui-id:
+                - if ( <[kwargs].exists.if_null[false]> ):
+                    - define args <[kwargs].get[<[gui-id]>].if_null[<map>]>
+                    - define prefix <[args].get[prefix].if_null[<[prefix].if_null[null]>]>
+                    - define index <[args].get[index].if_null[null]>
+                    - define title <[args].get[title].if_null[null]>
+                    - define size <[args].get[size].if_null[null]>
+                    - define contents <[args].get[contents].if_null[null]>
+                    - define list <[args].get[list].if_null[null]>
+                    - define fill <[args].get[fill].if_null[null]>
+                # |------- unique object check -------| #
+                - if ( <[prefix].if_null[null]> == null ):
+                    - define prefix <player.flag[gui_manager.sessions.<[session-id]>.nav.prefix].if_null[null]>
+                - if ( <[prefix].if_null[null]> != null ):
+                    - define inventory <inventory[<[prefix]><[gui-id]>].if_null[null]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.nav.prefix:<[prefix]>
+                - else:
+                    - define inventory <inventory[<[gui-id]>].if_null[null]>
+                # |------- flags -------| #
+                - define existing-id <player.has_flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>].if_null[false]>
+                - define missing-inventory <[inventory].exists.and[<[inventory].equals[null].not>].if_true[false].if_false[true]>
+                - define missing-contents <[contents].exists.and[<[contents].equals[null].not>].if_true[false].if_false[true]>
+                - define missing-list <[list].exists.and[<[list].equals[null].not>].if_true[false].if_false[true]>
+                - define contents-type <[missing-contents].if_true[null].if_false[<[contents].object_type>]>
+                - define list-type <[missing-list].if_true[null].if_false[<[list].object_type>]>
+                # |------- data -------| #
+                - define built <player.flag[gui_manager.sessions.<[session-id]>.built].if_null[<list>]>
+                - define cache <player.flag[gui_manager.sessions.<[session-id]>.data].get[<[gui-id]>].if_null[<map>]>
+                # |------- validate -------| #
+                - if ( not <[missing-contents]> ) && ( not <[contents-type].equals[inventory]> ):
+                    - ~run gui_manager_validate def.contents:<[contents]> save:valid-contents
+                    - define contents <entry[valid-contents].created_queue.determination.get[1].if_null[null]>
+                    - define missing-contents <[contents].equals[null].if_true[true].if_false[false]>
+                    - define contents-type <[missing-contents].if_true[null].if_false[<[contents].object_type>]>
+                - if ( not <[missing-list]> ):
+                    - ~run gui_manager_validate def.contents:<[list]> def.adjust-contents:false save:valid-list
+                    - define list <entry[valid-list].created_queue.determination.get[1].if_null[null]>
+                    - define missing-list <[list].equals[null].if_true[true].if_false[false]>
+                    - define list-type <[missing-list].if_true[null].if_false[<[list].object_type>]>
+                - if ( <[contents].is_empty.if_null[true]> ):
+                    - define contents:!
+                    - define missing-contents true
+                - if ( <[list].is_empty.if_null[true]> ):
+                    - define list:!
+                    - define missing-list true
+                - if ( <[size].if_null[null]> != null ) && ( not <[size].is_integer.if_null[false]> ):
+                    - define size:!
+                    - if ( <[debug]> ):
+                        - define message "<[log_prefix]> size must be of object type integer. Invalid type '<[size].object_type.to_lowercase>' ignored."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                - else if ( <[size].mod[9].if_null[0]> != 0 ):
+                    # |------- invalid size -------| #
+                    - define invalid <[size]>
+                    - define size <[invalid].add[<element[9].mod[<[size].mod[9]>]>].if_null[<[size]>]>
+                    - if ( <[size]> == <[invalid]> ):
+                        - define size <[invalid].sub[<[size].mod[9].mod[9]>].if_null[<[size]>]>
+                    - if ( <[debug]> ):
+                        - define message "<[log_prefix]> invalid parameter input size '<[invalid]>'. Updated to '<[size]>'."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                # |------- adjust inventory cache -------| #
+                - if ( not <[missing-inventory]> ):
+                    # |------- cache unique -------| #
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.type:unique
+                - else if ( <[missing-inventory]> ) && ( not <[existing-id]> ):
+                    - define size <[missing-contents].if_true[<[size].if_null[null].equals[null].if_true[54].if_false[<[size]>]>].if_false[<[contents].size.if_null[0].is_more_than[54].if_true[54].if_false[<[contents].size>]>]>
+                    - narrate "size: <[size]>"
+                    # |------- cache generic -------| #
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.type:generic
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.size:<[size]>
+                    - define inventory <inventory[generic[title=<[gui-id]>;size=<[size]>]]>
+                - else if ( <[cache].get[type].if_null[null]> == generic ) || ( <[existing-id]> && <[missing-inventory]> ):
+                    # |------- instantiate generic -------| #
+                    - define cached-index <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index].if_null[1]>
+                    - define cached-title <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.title].if_null[<[gui-id].replace_text[regex:_].with[<&sp>]>]>
+                    - define cached-size <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.size].if_null[null]>
+                    - define cached-contents <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.contents.<[cached-index]>].unescaped.as[list].if_null[<list>]>
+                    - if ( <[size].if_null[null]> != null ) && ( <[cached-size]> != <[size]> ):
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.size:<[size]>
+                        - define cached-size <[size]>
+                    - define inventory <inventory[generic[title=<[cached-title]>;size=<[cached-size]>;contents=<[cached-contents]>]]>
+                # |------- adjust contents cache -------| #
+                - if ( <[contents-type].equals[inventory]> ):
+                    - define contents <[contents].list_contents.if_null[<list>]>
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.contents.1:<[contents].escaped>
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index:1
+                - else if ( <[contents-type].equals[list]> ):
+                    - define pages <[contents].sub_lists[<[contents].size>].if_null[<list[<[contents]>]>]>
+                    - if ( <[pages].is_empty.if_null[true]> ):
+                        - narrate null-contents
+                    - else:
+                        - define pages <util.list_numbers_to[<[pages].size>].map_with[<[pages].parse_tag[<[parse_value].escaped>]>]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.contents:<[pages]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index:1
+                        - if ( <[missing-list]> ) && ( <[cache].keys.contains[lists].if_null[false]> ):
+                            - define list <[cache].get[listables].unescaped.as[list].if_null[<list>]>
+                            - define missing-list <[list].equals[null].if_true[true].if_false[false]>
+                            - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.lists:!
+                            - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.listables:!
+                # |------- parse parameters (list) -------| #
+                - define cache <player.flag[gui_manager.sessions.<[session-id]>.data].get[<[gui-id]>].if_null[<map>]>
+                - if ( not <[missing-list]> ):
+                    # |------- data -------| #
+                    - define cached <[cache].keys.contains[contents].if_null[false]>
+                    - define listed <[cache].keys.contains[lists].if_null[false]>
+                    # |------- parse contents -------| #
+                    - if ( <[cached]> ) && ( not <[listed]> ):
+                        - define pages <[cache].get[contents].if_null[<map>]>
+                        - foreach <[pages]> key:index as:page:
+                            - define empty-slots <[page].unescaped.as[list].find_all_matches[air].if_null[<list>]>
+                            - if ( <[empty-slots].is_empty> ) && ( <[inventory].list_contents.is_empty.if_null[true]> ):
+                                - define empty-slots <util.list_numbers_to[<[page].size>]>
+                            - if ( <[empty-slots].any> ):
+                                - define page-slots:->:<[empty-slots]>
+                                - define list-pages:->:<[list].get[1].to[<[empty-slots].size>].if_null[<[list].get[1].to[<[list].size>]>]>
+                                - define list <[list].remove[1].to[<[empty-slots].size>].if_null[<[list].remove[1].to[<[list].size>]>]>
+                            - else if ( <[debug]> ):
+                                # |------- null slots -------| #
+                                - define message "<[log_prefix]> inventory '<[gui-id]>_<[loop_index]>' does not contain any empty slots."
+                                - debug log <[message]>
+                                - log <[message]> type:warning file:<[log_path]>
+                        - if ( <[list].any> ):
+                            # |------- handle overflow -------| #
+                            - define overflow <[list].sub_lists[<[page-slots].last.size>].if_null[<list[<[list]>]>]>
+                            - if ( <[overflow].is_empty> ):
+                                - if ( <[debug]> ):
+                                    # |------- could not allocate -------| #
+                                    - define message "<[log_prefix]> could not allocate '<[list].size>' list overflow. A critical size error has occurred."
+                                    - debug log <[message]>
+                                    - log <[message]> type:warning file:<[log_path]>
+                            - else:
+                                - define page-slots <[page-slots].include[<[overflow].filter_tag[<[filter_value].is_empty.not>].separated_by[|]>]>
+                    - else:
+                        - define empty-slots <[inventory].list_contents.find_all_matches[air].if_null[<list>]>
+                        - if ( <[empty-slots].is_empty> ) && ( <[inventory].list_contents.is_empty.if_null[true]> ):
+                            - define empty-slots <util.list_numbers_to[<[inventory].size>]>
+                        - if ( <[empty-slots].any> ):
+                            - define list-pages <[list].sub_lists[<[empty-slots].size>].if_null[<list>]>
+                            - define page-slots <util.list_numbers_to[<[list-pages].size>].replace[regex:[0-9]].with[<[empty-slots]>].if_null[<list>]>
+                        - else if ( <[debug]> ):
+                            # |------- null slots -------| #
+                            - define message "<[log_prefix]> inventory '<[gui-id]>' does not contain any empty slots."
+                            - debug log <[message]>
+                            - log <[message]> type:warning file:<[log_path]>
+                    # |------- parse listables -------| #
+                    - define missing-pages <[list-pages].exists.and[<[list-pages].is_empty.not>].if_true[false].if_false[true]>
+                    - if ( <[missing-pages]> ) && ( <[listed]> ):
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.listables:!
+                    - else if ( not <[missing-pages]> ):
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.listables:<[list-pages].combine.escaped>
+                        - foreach <[list-pages]> as:page:
+                            - define empty-slots <[page-slots].get[<[loop_index]>]>
+                            - if ( <[page]> == <[list-pages].last> ):
+                                # |------- validate empty -------| #
+                                - define last <[page]>
+                                - if ( <[page].size> < <[empty-slots].size> ):
+                                    - if ( not <[fill].object_type.equals[item].if_null[true]> ):
+                                        - define fill:!
+                                        - if ( <[debug]> ):
+                                            # |------- invalid parameter 'fill' -------| #
+                                            - define message "<[log_prefix]> fill must be of object type item."
+                                            - debug log <[message]>
+                                            - log <[message]> type:warning file:<[log_path]>
+                                    # |------- fill empty -------| #
+                                    - define list-pages:<-:<[last]>
+                                    - define page <[last].pad_right[<[empty-slots].size>].replace[<empty>].with[<[fill].if_null[<item[air]>]>]>
+                                    - define list-pages:->:<[page]>
+                            - if ( <[list-pages].size> == 1 ) && ( <[page].is_empty> ):
+                                - if ( <[cache].get[lists].if_null[null]> != null ):
+                                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.lists:!
+                                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.listables:!
+                                - goto skip-listing
+                            # |------- cache pages -------| #
+                            - define cached_contents <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.contents.<[loop_index]>].unescaped.as[list].if_null[null]>
+                            - if ( <[cached_contents]> == null ):
+                                - define cached_contents <[inventory].list_contents>
+                                - if ( <[cached_contents].is_empty> ):
+                                    - define cached_contents <list.pad_right[<[inventory].size>]>
+                            - foreach <[empty-slots].map_with[<[page]>]> key:slot as:item:
+                                - define cached_contents <[cached_contents].set[<[item]>].at[<[slot]>]>
+                            - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.lists.<[loop_index]>:<[cached_contents].escaped>
+                        # |------- update flags -------| #
+                        - define cached-index <player.flag[gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index].if_null[null]>
+                        - if ( <[cached-index]> == null ):
+                            - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index:1
+                        - else if ( <[cached-index].if_null[1]> > <[list-pages].size> ):
+                            - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index:<[cached-index].sub[<[cached-index].mod[<[list-pages].size>]>]>
+
+                # |------- check cached properties -------| #
+                - mark skip-listing
+                - define original-title <[inventory].title.if_null[<[gui-id]>]>
+                - define cache <player.flag[gui_manager.sessions.<[session-id]>.data].get[<[gui-id]>].if_null[<map>]>
+                - if ( <[index].if_null[null]> != null ) && ( not <[cache].keys.contains[contents]> ) && ( not <[cache].keys.contains[lists]> ):
+                    - define index:!
+                - else if ( <[cache].keys> contains contents ) || ( <[cache].keys> contains lists ):
+                    # |------- page data -------| #
+                    - define manual <[index].if_null[null]>
+                    - define index <[cache].get[index].if_null[1]>
+                    - define pages <[cache].get[lists].if_null[<[cache].get[contents].if_null[<map>]>]>
+                    # |------- adjust index -------| #
+                    - choose <[manual].if_null[null]>:
+                        - case first start:
+                            - define index 1
+                        - case last end:
+                            - define index <[pages].size>
+                        - case next:
+                            - if ( <[index].add[1]> > <[pages].size> ):
+                                - define index <[pages].size>
+                            - else:
+                                - define index:++
+                        - case previous prev:
+                            - if ( <[index].sub[1]> >= 1 ):
+                                - define index:--
+                        - default:
+                            - if ( <[manual]> != null ) && ( not <[manual].is_integer> ):
+                                - if ( <[debug]> ):
+                                    - define message "<[log_prefix]> gui-id '<[gui-id]>' does not recognize index keyword '<[manual]>'."
+                                    - debug log <[message]>
+                                    - log <[message]> type:warning file:<[log_path]>
+                            - else if ( <[manual].is_integer> ):
+                                - if ( <[manual]> >= 1 ):
+                                    - if ( <[manual]> > <[pages].size> ):
+                                        - define index <[pages].size>
+                                        - if ( <[debug]> ):
+                                            # |------- max index -------| #
+                                            - define message "<[log_prefix]> gui-id '<[gui-id]>' does not contain index '<[manual]>'. Defaulting to '<[pages].size>'."
+                                            - debug log <[message]>
+                                            - log <[message]> type:warning file:<[log_path]>
+                                    - else:
+                                        - define index <[manual]>
+                                - else:
+                                    # |------- min index -------| #
+                                    - define index 1
+                                    - if ( <[debug]> ):
+                                        - define message "<[log_prefix]> gui-id '<[gui-id]>' does not contain index '<[manual]>'. Defaulting to '1'."
+                                        - debug log <[message]>
+                                        - log <[message]> type:warning file:<[log_path]>
+                    # |------- adjust contents -------| #
+                    - define content <[pages].get[<[index]>].unescaped.as[list].if_null[<list>]>
+                    - if ( <[content].is_empty> ):
+                        - if ( <[debug]> ):
+                            # |------- invalid content -------| #
+                            - define message "<[log_prefix]> index '<[index]>' could not be found."
+                            - debug log <[message]>
+                            - log <[message]> type:severe file:<[log_path]>
+                    - else:
+                        - adjust <[inventory]> contents:<[content]>
+                        - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.index:<[index]>
+                # |------- adjust title -------| #
+                - if ( <[title].if_null[null]> != null ):
+                    - flag <player> gui_manager.sessions.<[session-id]>.data.<[gui-id]>.title:<[title].if_null[null]>
+                - else if ( <[cache].get[title].if_null[null]> != null ):
+                    - define title <[cache].get[title].if_null[null]>
+                - else:
+                    - define title <[original-title]>
+                - if ( <[gui-id]> == <[gui-ids].last> ):
+                    - if ( <[auto-title].if_null[true]> ) && ( <[index].if_null[null]> != null ) && ( <[pages].size.if_null[1]> > 1 ) && ( <[index].is_integer> ):
+                        - adjust <[inventory]> title:<[title]><&sp>-<&sp><[index]>
+                    - else if ( <[inventory].title> != <[title]> ):
+                        - adjust <[inventory]> title:<[title]>
+                    - define updated <[inventory]>
+            # |------- return instantiated inventory -------| #
+            - determine <[updated].if_null[null]>
+
+
+
+gui_manager_build:
+    ##########################################################
+    # | ---  |              build task              |  --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Required:  gui-id                         --- | #
+    # | ---                                            --- | #
+    # | ---  Optional:  session-id | parent-id         --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Returns:  bool                            --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Run: true | Await: true | Inject: false   --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | parent-id | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:build save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine false
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+            - if ( <[missing-id]> ):
+                - define gui-id <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+                - if ( <[missing-id]> ):
+                    - if ( <[debug]> ):
+                        # |------- missing parameter 'gui-id' -------| #
+                        - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - determine false
+            # |------- check multi -------| #
+            - if ( <[id-type].equals[list]> ):
+                - flag <player> gui_manager.sessions.<[session-id]>.ast.<[gui-id].separated_by[.]>:<empty>
+                - flag <player> gui_manager.sessions.<[session-id]>.built:|:<[gui-id]>
+                - if ( <[debug]> ):
+                    - define message "<[log_prefix]> built '<[gui-id].separated_by[.]>' to ast."
+                    - debug log <[message]>
+                    - log <[message]> type:info file:<[log_path]>
+                - determine true
+            # |------- ast data -------| #
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - if ( <[parent-id].if_null[null]> == null ):
+                - define parent-id <player.flag[gui_manager.sessions.<[session-id]>.nav.previous].last.if_null[null]>
+                #- narrate "parent-id: <[parent-id]>"
+                - if ( <[parent-id]> == null ):
+                    - flag <player> gui_manager.sessions.<[session-id]>.ast.<[gui-id]>:<empty>
+                    - goto built
+            - define parsed <[ast].deep_keys.filter_tag[<[filter_value].split[.].contains[<[parent-id]>]>].parse_tag[<[parse_value].split[.].get[1].to[<[parse_value].split[.].find[<[parent-id]>]>]>].deduplicate>
+            - if ( <[parsed].size> > 1 ):
+                - if ( <[debug]> ):
+                    # |------- maximum -------| #
+                    - define message "<[log_prefix]> gui '<[gui-id]>' found too many parent nodes and is limited to one (1)."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine false
+            - else if ( <[parsed].is_empty> ):
+                - flag <player> gui_manager.sessions.<[session-id]>.ast.<[gui-id]>:<empty>
+                - goto built
+            - define branch <[parsed].get[1].separated_by[.]>
+            - flag <player> gui_manager.sessions.<[session-id]>.ast.<[branch]>.<[gui-id]>:<empty>
+            - mark built
+            # |------- success -------| #
+            - flag <player> gui_manager.sessions.<[session-id]>.built:->:<[gui-id]>
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> built '<[gui-id]>' to ast."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+            #- narrate <player.flag[gui_manager.sessions.<[session-id]>.ast]>
+            - determine true
+
+
+
+gui_manager_validate:
+    ###############################################################################
+    # | ---  |                       validate task                       |  --- | #
+    ###############################################################################
+    # | ---                                                                 --- | #
+    # | ---  Required:  gui-id | contents                                   --- | #
+    # | ---                                                                 --- | #
+    # | ---  Optional:  session-id | escaped | adjust-id | adjust-contents  --- | #
+    # | ---                                                                 --- | #
+    ###############################################################################
+    # | ---                                                                 --- | #
+    # | ---  Returns:  str | list | map                                     --- | #
+    # | ---                                                                 --- | #
+    ###############################################################################
+    # | ---                                                                 --- | #
+    # | ---  Run: true | Await: true | Inject: false                        --- | #
+    # | ---                                                                 --- | #
+    ###############################################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | contents | escaped | adjust-contents | adjust-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define missing-contents <[contents].exists.and[<[contents].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:validate save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        # |------- parameter check -------| #
+        - if ( <[missing-id]> ) && ( <[missing-contents]> ):
+            - if ( <[debug]> ):
+                # |------- missing parameter 'gui-id' (null) -------| #
+                - define message "<[log_prefix]> task requires 'gui-id' or 'contents' data to validate."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else if ( not <[missing-id]> ) && ( not <[missing-contents]> ):
+            - define id_index <queue.definitions.find[gui-id].if_null[1]>
+            - define content_index <queue.definitions.find[contents].if_null[<[id_index]>]>
+            - if ( <[id_index]> > <[content_index]> ):
+                - define exe_order <list[contents|gui-id]>
+            - else if ( <[id_index]> != <[content_index]> ):
+                - define exe_order <list[gui-id|contents]>
+        # |------- validate (contents) -------| #
+        - if ( not <[missing-contents]> ):
+            #- define filtered <[contents].filter_tag[<[filter_value].object_type.equals[list].or[<[filter_value].object_type.equals[element].and[<[filter_value].starts_with[li&at].if_null[false>]>]>].if_null[<list>>
+            - define filtered <list.include[<[contents].first.if_null[null]>|<[contents].last.if_null[null]>].filter_tag[<[filter_value].object_type.equals[list].or[<[filter_value].object_type.equals[element].and[<[filter_value].starts_with[li&at].if_null[false]>]>]>].if_null[<list>]>
+            - if ( <[filtered].is_empty> ):
+                - define parsable:->:<[contents]>
+                - define arg-type single
+            - else:
+                - define parsable <[filtered]>
+                - define arg-type list
+            - foreach <[parsable]> as:content:
+                - define contents-type <[contents].object_type>
+                - if ( <[contents-type].equals[element]> ) && ( <[content].starts_with[li&at].if_null[false]> ):
+                    - define content <[content].unescaped.as[list]>
+                    - define contents-type list
+                - if ( not <[contents-type].equals[list]> ):
+                    # |------- invalid type -------| #
+                    - define message "<[log_prefix]> contents must be of type list. Object type '<[contents-type].to_lowercase>' ignored."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                    - foreach next
+                - else if ( <[content].is_empty.if_null[true]> ):
+                    - if ( <[debug]> ):
+                        # |------- empty contents -------| #
+                        - define message "<[log_prefix]> contents are empty. Object type 'empty list' ignored."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - foreach next
+                - define valid <[content].filter_tag[<[filter_value].object_type.equals[item]>].if_null[<list>]>
+                - if ( <[debug]> ) && ( <[valid].size> != <[content].size> ):
+                    - define invalid <[content].filter_tag[<[filter_value].object_type.equals[item].not>].if_null[<list>]>
+                    - if ( <[invalid].any> ):
+                        # |------- invalid found -------| #
+                        - define message "<[log_prefix]> removed '<[invalid].size>' items from contents list. Parameter 'contents' must be a list of item objects."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                - define valid <[valid].pad_right[<[content].size>]>
+                # |------- cache contents -------| #
+                - if ( <[adjust-contents].if_null[true]> ) && ( <[valid].size.mod[9]> != 0 ) && ( <[valid].size> > 9 ):
+                    # |------- invalid contents size -------| #
+                    - define invalid <[valid].size>
+                    - define contrast <element[9].mod[<[invalid].mod[9]>]>
+                    - if ( <[contrast]> != 0 ):
+                        - define valid <[valid].pad_right[<[contrast]>].replace[<empty>].with[<item[air]>].if_null[<[valid]>]>
+                    - else:
+                        - define contrast <[invalid].mod[9].mod[9]>
+                        - define valid <[valid].reverse.remove[<util.list_numbers_to[<[contrast]>].separated_by[|]>].reverse>
+                    - narrate "invalid: <[invalid]>"
+                    - narrate "valid: <[valid].size>"
+                    - narrate "contrast: <[contrast]>"
+                - if ( <[valid].any> ):
+                    - if ( <[escaped].if_null[false]> ):
+                        - define valid <[valid].escaped>
+                    - define valid-contents:->:<[valid]>
+            - if ( <[valid-contents].size.if_null[1]> == 1 ) && ( <[arg-type]> == single ):
+                - define valid-contents <[valid-contents].last.if_null[<[parsable].last>]>
+            - else:
+                - define valid-contents <[valid-contents].if_null[null]>
+        # |------- validate (gui-id) -------| #
+        - if ( <[id-type].equals[map]> ) || ( <[id-type].equals[list]> ):
+            - if ( <[id-type].equals[map]> ):
+                # |------- parse gui-ids -------| #
+                - define filtered <[gui-id].filter_tag[<[filter_value].object_type.equals[map].and[<[filter_key].object_type.equals[element].and[<[filter_key].equals[null].not.and[<[filter_key].is_integer.not.and[<[filter_key].is_boolean.not>]>]>]>]>].if_null[<map>]>
+                - define valid <[filtered].keys.parse_tag[<[parse_value].replace_text[regex:<&sp>|-].with[_]>].if_null[<[filtered].keys>].map_with[<[filtered].values>].as[map]>
+                - if ( <[debug]> ) && ( <[valid].keys.size> != <[gui-id].keys.size> ):
+                    - define invalid <[gui-id].filter_tag[<[filter_value].object_type.equals[map].not.or[<[filter_key].object_type.equals[element].not.or[<[filter_key].equals[null].or[<[filter_key].is_integer.or[<[filter_key].is_boolean>]>]>]>]>].if_null[<map>]>
+                    - foreach <[invalid]> key:invalid-id as:invalid-value:
+                        # |------- log invalid -------| #
+                        - define id-type <[invalid-id].object_type>
+                        - define value-type <[invalid-value].object_type>
+                        - if ( not <[id-type].equals[element].if_null[false]> ) && ( not <[value-type].equals[map].if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id must be of type string and args must be of type map. Object type '<[id-type].to_lowercase>' and '<[value-type].to_lowercase>' ignored."
+                        - else if ( not <[id-type].equals[element].if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id must be of type string. Object type '<[id-type].to_lowercase>' ignored."
+                        - else if ( <[invalid-id].is_integer.if_null[false]> ) && ( not <[value-type].equals[map].if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string and args must be of type map. Object type 'integer' and '<[value-type].to_lowercase>' ignored."
+                        - else if ( <[invalid-id].is_integer.if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string. Object type 'integer' ignored."
+                        - else if ( <[invalid-id].is_boolean.if_null[false]> ) && ( not <[value-type].equals[map].if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string and args must be of type map. Object type 'integer' and '<[value-type].to_lowercase>' ignored."
+                        - else if ( <[invalid-id].is_boolean.if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string. Object type 'boolean' ignored."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+                # |------- validate values -------| #
+                - foreach <[valid].deep_keys.deduplicate.filter_tag[<[filter_value].split[.].last.contains_any[contents|list].if_null[false]>].if_null[<list>]> as:kwarg:
+                    - define parsable <[valid].deep_get[<[kwarg]>]>
+                    - if ( <[parsable].object_type.equals[list]> ):
+                        - define valid.<[kwarg]>:<[parsable].escaped>
+            - else:
+                # |------- parse list -------| #
+                - define valid <[gui-id].filter_tag[<[filter_value].object_type.equals[element].and[<[filter_value].equals[null].not.and[<[filter_value].is_integer.not.and[<[filter_value].is_boolean.not>]>]>]>].parse_tag[<[parse_value].replace_text[regex:<&sp>|-].with[_]>].as[list].if_null[<list>]>
+                - if ( <[debug]> ) && ( <[valid].size> != <[gui-id].size> ):
+                    - define invalid <[gui-id].filter_tag[<[filter_value].object_type.equals[element].not.or[<[filter_value].equals[null].or[<[filter_value].is_integer.or[<[filter_value].is_boolean>]>]>]>].if_null[<list>]>
+                    - foreach <[invalid]> as:invalid-id:
+                        # |------- log invalid -------| #
+                        - if ( not <[invalid-id].object_type.equals[element].if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id must be of type string. Object type '<[invalid-id].object_type.to_lowercase>' ignored."
+                        - else if ( <[invalid-id].is_integer.if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string. Object type 'integer' ignored."
+                        - else if ( <[invalid-id].is_boolean.if_null[false]> ):
+                            - define message "<[log_prefix]> gui-id '<[invalid-id]>' must be of type string. Object type 'boolean' ignored."
+                        - debug log <[message]>
+                        - log <[message]> type:warning file:<[log_path]>
+            - if ( <[valid].is_empty> ):
+                # |------- invalid (null) -------| #
+                - define message "<[log_prefix]> found '<[gui-id].size>' invalid gui-id(s)."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+            - else if ( <[valid].object_type.equals[map]> ):
+                # |------- valid (list) -------| #
+                - define valid-ids:->:<[valid].as[map]>
+            - else:
+                # |------- valid (list) -------| #
+                - define valid-ids:->:<[valid].as[list]>
+        - else if ( not <[missing-id]> ):
+            # |------- valid (str) -------| #
+            - if ( <[debug]> ) && ( not <[id-type].equals[element].if_null[false]> ):
+                - define message "<[log_prefix]> gui-id must be of type string. Object type '<[id-type].to_lowercase>' ignored."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+            - else if ( <[debug]> ) && ( <[gui-id].is_integer.if_null[false]> ):
+                - define message "<[log_prefix]> gui-id '<[gui-id]>' must be of type string. Object type 'integer' ignored."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+            - else if ( <[debug]> ) && ( <[gui-id].is_boolean.if_null[false]> ):
+                - define message "<[log_prefix]> gui-id '<[gui-id]>' must be of type string. Object type 'boolean' ignored."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+            - else if ( <[gui-id].object_type.equals[element]> ):
+                - define valid-ids:->:<[gui-id].replace_text[regex:<&sp>|-].with[_].if_null[<[gui-id].if_null[null]>]>
+        # |------- determine -------| #
+        - define missing-valid-ids <[valid-ids].if_null[null].equals[null].if_null[true]>
+        - define missing-valid-contents <[valid-contents].if_null[null].equals[null].if_null[true]>
+        - if ( <[valid-ids].size.if_null[0]> == 1 ):
+            - define valid-ids <[valid-ids].last>
+        - if ( <[exe_order].last.if_null[null]> == contents ) && ( not <[missing-valid-ids]> ) && ( not <[missing-valid-contents]> ):
+            - define valid-data:->:<[valid-ids]>
+            - define valid-data:->:<[valid-contents]>
+        - else if ( <[exe_order].last.if_null[null]> == gui-id ) && ( not <[missing-valid-ids]> ) && ( not <[missing-valid-contents]> ):
+            - define valid-data:->:<[valid-contents]>
+            - define valid-data:->:<[valid-ids]>
+        - else if ( <[exe_order].exists> ) && ( not <[missing-valid-ids]> ) && ( <[missing-valid-contents]> ):
+            - define valid-data <[valid-ids]>
+        - else if ( <[exe_order].exists> ) && ( not <[missing-valid-contents]> ) && ( <[missing-valid-ids]> ):
+            - define valid-data <[valid-contents]>
+        - else if ( <[valid-ids].if_null[null]> != null ):
+            - define valid-data <[valid-ids]>
+        - else if ( <[valid-contents].if_null[null]> != null ):
+            - define valid-data <[valid-contents]>
+        - determine <[valid-data].if_null[null]>
+
+
+
+# | ----------------------------------------------  GUI MANAGER | UTILITY TASKS  ---------------------------------------------- | #
+
+
+
+gui_manager_get_version:
+    #########################################################
+    # | ---  |             get version             |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  none                          --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  str | bool                     --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: false  --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    script:
+        - define version <script[gui_manager].data_key[data.version].if_null[null]>
+        - if ( <[version]> != null ):
+            - determine <[version]>
+        - else:
+            - narrate "version could not be located."
+            - determine false
+
+
+
+gui_manager_log:
+    ##########################################################
+    # | ---  |             get log data             |  --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Required:  none                           --- | #
+    # | ---                                            --- | #
+    # | ---  Optional:  session-id | prefix | path     --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Returns:  list                            --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Run: true | Await: true | Inject: false   --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    type: task
+    debug: false
+    definitions: session-id | prefix | path | task
+    script:
+        - if ( not <[session-id].exists> ) || ( <[session-id].if_null[null]> == null ):
+            - define session-id <player.flag[gui_manager.id].if_null[null]>
+        - define log_dir <script[gui_manager].parsed_key[data.config.log.dir].split[/].separated_by[/].if_null[<script[gui_manager].parsed_key[data.config.log.dir]>].if_null[plugins/Denizen/data/logs/gui_manager]>
+        - if ( <[log_dir].ends_with[/]> ):
+            - define log_dir <[log_dir].before_last[/].if_null[<[log_dir]>]>
+        - define log_path <[log_dir]>/<util.time_now.format[MM-dd-yyyy]>.txt
+        - if ( <[task].exists> ):
+            - define log_prefix <element[<script[gui_manager].parsed_key[data.config.prefixes.main].if_null[null]> [<[session-id]>] <player.name> - <[task].if_null[log]>() -<&gt>]>
+        - else:
+            - define log_prefix <element[<script[gui_manager].parsed_key[data.config.prefixes.main].if_null[null]> [<[session-id]>] <player.name>]>
+        - if ( <[prefix].if_null[false]> ) && ( not <[path].if_null[false]> ):
+            - define log-data <[log_prefix].if_null[null]>
+        - else if ( <[path].if_null[false]> ) && ( not <[prefix].if_null[false]> ):
+            - define log-data <[log_path].if_null[null]>
+        - else:
+            - define log-data <list.include[<[log_prefix]>|<[log_path]>].if_null[<list>]>
+        - determine <[log-data]>
+
+
+
+gui_manager_purge_logs:
+    ########################################################
+    # | ---  |             purge logs             |  --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Required:  none                         --- | #
+    # | ---                                          --- | #
+    # | ---  Optional:  session-id                   --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Returns:  bool                          --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Run: true | Await: true | Inject: true  --- | #
+    # | ---                                          --- | #
+    ########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:purge save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        # |------- parse -------| #
+        - if ( <[debug]> ):
+            - define message "<[log_prefix]> purge triggered. Gathering logs..."
+            - debug log <[message]>
+            - log <[message]> type:info file:<[log_path]>
+        - define dir <script[gui_manager].parsed_key[data.config.log.dir].if_null[plugins/Denizen/data/logs/gui_manager/].split[/].separated_by[/]>
+        - define path <[dir].after[denizen/]>
+        - define latest <util.time_now.format[MM-dd-yyyy]>
+        - if ( <util.has_file[<[path]>/<[latest]>.txt]> ):
+            - define logs <util.list_files[<[path]>].if_null[<list[<empty>]>]>
+            - define max <script[gui_manager].data_key[data.config.log.max].if_null[6]>
+            - define amount <[logs].exclude[<[latest]>.txt].size>
+            - if ( not <[max].is_integer> ):
+                # |------- invalid int -------| #
+                - define message "<[log_prefix]> parameter max '<[max]>' is not of type integer."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - else if ( <[logs].size> >= <[max]> ):
+                # |------- purge -------| #
+                - foreach <[logs].exclude[<[latest]>.txt].if_null[<[logs]>]> as:log:
+                    - adjust system delete_file:<[path]>/<[log]>
+                - if ( <[debug]> ):
+                    - if ( <[amount]> > 1 ):
+                        - define message "<[log_prefix]> '<[amount]>' logs purged."
+                    - else:
+                        - define message "<[log_prefix]> '<[amount]>' log purged."
+                    - if ( <player.flag[gui_manager.debug]> ):
+                        - debug log <[message]>
+                        - log <[message]> type:info file:<[log_path]>
+            - else if ( <[debug]> ):
+                # |------- cancel -------| #
+                - if ( <[amount]> > 1 ):
+                    - define message "<[log_prefix]> purge cancelled. '<[logs].size>' logs found."
+                - else:
+                    - define message "<[log_prefix]> purge cancelled. '<[logs].size>' log found."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+
+
+
+gui_manager_get_session:
+    #########################################################
+    # | ---  |             get session             |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  session-id                    --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  str                            --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: false  --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.session save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        # |------- data -------| #
+        - if ( <[session-id].exists> ) && ( <[session-id].if_null[null]> != null ):
+            - if ( not <player.flag[gui_manager.sessions].keys.contains[<[session-id]>]> ):
+                - define session-id:!
+        - if ( not <[session-id].exists> ) || ( <[session-id].exists> && <[session-id]> == null ):
+            - define session-id <player.flag[gui_manager.id].if_null[null]>
+        - if ( <[session-id].if_null[null]> != null ) && ( <[session-id].split[-].size.if_null[0]> != 5 ):
+            - define session-id:!
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> invalid token structure."
+                - debug log <[message]>
+                - log <[message]> type:warning file:<[log_path]>
+        - determine <[session-id].if_null[null]>
+
+
+
+gui_manager_get_slot:
+    ##########################################################
+    # | ---  |               get slot               |  --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Required:  slot                           --- | #
+    # | ---                                            --- | #
+    # | ---  Optional:  seesion-id | contents          --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Returns:  str | bool                      --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Run: true | Await: true | Inject: false   --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    type: task
+    debug: false
+    definitions: session-id | slot | contents
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.slot save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - define prefix <player.flag[gui_manager.sessions.<[session-id]>.nav.prefix].if_null[null]>
+        - define missing-slot <[slot].exists.and[<[slot].equals[null].not>].if_true[false].if_false[true]>
+        - define missing-contents <[contents].exists.and[<[contents].equals[null].not>].if_true[false].if_false[true]>
+        - define slot-type <[missing-slot].if_true[null].if_false[<[slot].object_type>]>
+        - define contents-type <[missing-contents].if_true[null].if_false[<[contents].object_type>]>
+        # |------- parse contents -------| #
+        - if ( <[missing-contents]> ):
+            - define current <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+            - if ( <[current]> == null ):
+                - goto contents-check
+            - define contents <[current]>
+            - define missing-contents false
+            - define contents-type element
+        - if ( <[contents-type].equals[inventory]> ):
+            - define contents <[contents].list_contents.if_null[<list>]>
+            - define contents-type list
+        - else if ( <[contents-type].equals[element]> ):
+            - if ( <[prefix]> != null ):
+                - define inventory <inventory[<[prefix]><[contents].replace_text[regex:<&sp>|-].with[_]>].if_null[null]>
+            - else:
+                - define inventory <inventory[<[contents].replace_text[regex:<&sp>|-].with[_]>].if_null[null]>
+            - if ( <[inventory]> == null ):
+                - if ( <[debug]> ):
+                    - narrate invalid-inventory-script
+                - determine false
+            - define contents <[inventory].list_contents.if_null[<list>]>
+            - define contents-type list
+        # |------- check contents -------| #
+        - mark contents-check
+        - define contents-size <[missing-contents].if_true[0].if_false[<[contents].size>]>
+        - if ( <[missing-contents]> ):
+            - if ( <[debug]> ):
+                - narrate missing-iterable
+            - determine false
+        - else if ( <[contents-size]> > 54 ):
+            - if ( <[debug]> ):
+                - narrate invalid-contents-size
+            - determine false
+        # |------- parse slots -------| #
+        - if ( <[missing-slot]> ):
+            - if ( <[debug]> ):
+                - narrate missing-slot
+            - determine false
+        - else if ( <[slot-type].equals[map]> ):
+            - if ( <[debug]> ):
+                - narrate invalid-struct
+            - determine false
+        - else if ( <[slot-type].equals[list]> ):
+            - define slots <[slot]>
+        - else:
+            - define slots <list[<[slot]>]>
+        - foreach <[slots]> as:slot:
+            - define slot-type <[missing-slot].if_true[null].if_false[<[slot].object_type>]>
+            - if ( not <[slot-type].equals[element]> ) && ( not <[slot-type].equals[item]> ):
+                - if ( <[debug]> ):
+                    - narrate invalid-type
+            - else if ( <[slot].is_integer.if_null[false]> ):
+                # |------- get slots (list of item) -------| #
+                - narrate placeholder
+            - else if ( <[slot-type].equals[item]> ):
+                # |------- get slots (list of int) -------| #
+                - define result <[contents].find_all_matches[raw_exact:<[slot]>]>
+                - if ( <[slots].size> == 1 ):
+                    - determine <[result]>
+                - define results:->:<[result]>
+            - else if ( <[slot-type].equals[element]> ):
+                # |------- get slots (int) -------| #
+                - define rows <[contents-size].div[9]>
+                - define parsed <[slot].replace_text[regex:<&sp>|_].with[-].split[-].exclude[<&sp>|<empty>].separated_by[-].if_null[<[slot]>]>
+                - define actions <list[<[parsed]>]>
+                - if ( <[parsed].contains[-]> ):
+                    - define actions <[parsed].split[-].if_null[<[actions]>]>
+                    - if ( <[actions].size> == 1 ) && ( <[actions].get[1].length> <= 3 ):
+                        - define actions <[actions].get[1].to_list>
+                - else if ( <[parsed].length> <= 3 ):
+                    - define actions <[parsed].to_list>
+                #- narrate "rows: <[rows]><&nl>slot: <[parsed]><&nl>actions: <[actions]>"
+                - choose <[parsed].if_null[null]>:
+                    - case tl t-l t-left top-l top-left:
+                        - define result 1
+                    - case tr t-r t-right top-r top-right:
+                        - define result 9
+                    - case bl b-l b-left bottom-l bottom-left:
+                        - define result <[rows].mul[9].sub[8]>
+                    - case br b-r b-right bottom-r bottom-right:
+                        - define result <[rows].mul[9]>
+                    - case c cu c-u c-up center-u center-up center:
+                        - if ( <[rows].is_even> ):
+                            - define result <[rows].sub[1].mul[9].div[2].round>
+                        - else if ( <[rows].is_odd> ):
+                            - if ( <[actions].contains_any[u|up]> ) && ( <[rows]> != 1 ):
+                                - define result <[rows].sub[2].mul[9].div[2].round>
+                            - else:
+                                - define result <[rows].mul[9].div[2].round>
+                    - case cd c-d c-down center-d center-down:
+                        - narrate placeholder
+                    - case ct c-t c-top center-t center-top:
+                        - narrate placeholder
+                    - case cb c-b c-bottom center-b center-bottom:
+                        - define result <[rows].mul[9].sub[4]>
+                    - case cr cru c-r-u c-right center-r center-right center-right-up:
+                        - if ( <[rows].is_even> ):
+                                - define result <[rows].sub[1].mul[9].div[2].round.add[4]>
+                        - else if ( <[rows].is_odd> ):
+                            - if ( <[actions].contains_any[u|up]> ) && ( <[rows]> != 1 ):
+                                - define result <[rows].sub[2].mul[9].div[2].round.add[4]>
+                            - else:
+                                - define result <[rows].mul[9].div[2].round.add[4]>
+                    - case crd c-r-d center-right-down:
+                        - narrate placeholder
+                    - case cl clu c-l-u c-left center-l center-left center-left-up:
+                        - if ( <[rows].is_even> ):
+                            - define result <[rows].sub[1].mul[9].div[2].round.sub[4]>
+                        - else if ( <[rows].is_odd> ):
+                            - if ( <[actions].contains_any[u|up]> ) && ( <[rows]> != 1 ):
+                                - define result <[rows].sub[2].mul[9].div[2].round.sub[4]>
+                            - else:
+                                - define result <[rows].mul[9].div[2].round.sub[4]>
+                    - case cld c-l-d center-left-down:
+                        - narrate placeholder
+                    - default:
+                        - narrate invalid-input(slot)
+                - if ( <[result].exists> ):
+                    - if ( <[slots].size> == 1 ):
+                        - determine <[result]>
+                    - define results:->:<[result]>
+            - else:
+                - determine false
+        - determine <[results].if_null[false]>
+
+
+
+gui_manager_get_opened:
+    ##########################################################
+    # | ---  |              get opened              |  --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Required:  none                           --- | #
+    # | ---                                            --- | #
+    # | ---  Optional:  session-id | gui-id            --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Returns:  list | bool                     --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Run: true | Await: true | Inject: false   --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.opened save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine false
+        - else:
+            # |------- gui data -------| #
+            - define opened <player.flag[gui_manager.sessions.<[session-id]>.data].keys.if_null[<list>]>
+            - if ( <[gui-id].if_null[null]> != null ):
+                - define gui-id <[gui-id].replace_text[regex:<&sp>|-].with[_].if_null[<[gui-id]>]>
+                # |------- return bool -------| #
+                - if ( <[opened]> contains <[gui-id]> ):
+                    - determine true
+                - else:
+                    - determine false
+            # |------- return all -------| #
+            - determine <[opened]>
+
+
+
+gui_manager_get_properties:
+    ##########################################################
+    # | ---  |            get properties            |  --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Required:  gui-id                         --- | #
+    # | ---                                            --- | #
+    # | ---  Optional:  none                           --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Returns:  map | bool                      --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    # | ---                                            --- | #
+    # | ---  Run: true | Await: true | Inject: false   --- | #
+    # | ---                                            --- | #
+    ##########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.data save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine false
+        - else:
+            - if ( <[gui-id].if_null[null]> == null ):
+                - if ( <[debug]> ):
+                    # |------- missing parameter 'gui-id' -------| #
+                    - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine false
+            # |------- gui data -------| #
+            - define gui-id <[gui-id].replace_text[regex:<&sp>|-].with[_].if_null[<[gui-id].if_null[null]>]>
+            - define cache <player.flag[gui_manager.sessions.<[session-id]>.data].get[<[gui-id]>].if_null[null]>
+            - if ( <[cache]> == null ):
+                - if ( <[debug]> ):
+                    # |------- missing -------| #
+                    - define message "<[log_prefix]> gui-id '<[gui-id]>' properties have not been cached."
+                    - debug log <[message]>
+                    - log <[message]> type:warning file:<[log_path]>
+                - determine false
+            # |------- return -------| #
+            - determine <[cache]>
+
+
+
+gui_manager_get_ast:
+    #########################################################
+    # | ---  |               get ast               |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  session-id                    --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  map | bool                     --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: false  --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    definitions: session-id
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.ast save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine false
+        - else:
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - if ( <[ast]> == null ):
+                - if ( <[debug]> ):
+                    # |------- missing ast -------| #
+                    - define message "<[log_prefix]> could not locate 'ast'. App must be initialized before use."
+                    - debug log <[message]>
+                    - log <[message]> type:warning file:<[log_path]>
+                - determine false
+            # |------- return ast -------| #
+            - determine <[ast]>
+
+
+
+gui_manager_get_root:
+    ############################################################
+    # | ---  |                get root                |  --- | #
+    ############################################################
+    # | ---                                              --- | #
+    # | ---  Required:  none                             --- | #
+    # | ---                                              --- | #
+    # | ---  Optional:  session-id | gui-id              --- | #
+    # | ---                                              --- | #
+    ############################################################
+    # | ---                                              --- | #
+    # | ---  Returns:  str                               --- | #
+    # | ---                                              --- | #
+    ############################################################
+    # | ---                                              --- | #
+    # | ---  Run: true | Await: true | Inject: false     --- | #
+    # | ---                                              --- | #
+    ############################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.root save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+            - if ( <[missing-id]> ) || ( not <[id-type].equals[element]> ):
+                - define gui-id <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+                - if ( <[missing-id]> ):
+                    - if ( <[debug]> ):
+                        # |------- missing parameter 'gui-id' -------| #
+                        - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - determine null
+            # |------- data -------| #
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - define roots <[ast].deep_keys.filter_tag[<[filter_value].split[.].contains[<[gui-id]>]>].parse_tag[<[parse_value].split[.].first.if_null[<[parse_value].split[.].last>]>].deduplicate.if_null[<list>]>
+            - if ( <[roots].size> > 1 ):
+                - if ( <[debug]> ):
+                    # |------- maximum -------| #
+                    - define message "<[log_prefix]> gui '<[gui-id]>' found too many root nodes and is limited to one (1)."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine null
+            - else if ( <[roots].is_empty> ):
+                # |------- default -------| #
+                - define root <[ast].sort_by_value[size].keys.first.if_null[<[gui-id]>]>
+                - if ( <[debug]> ) && ( <[context].if_null[null]> != self ):
+                    - define message "<[log_prefix]> gui '<[gui-id]>' could not locate root. Defaulting to '<[root]>'."
+                    - debug log <[message]>
+                    - log <[message]> type:warning file:<[log_path]>
+                - determine <[root]>
+            # |------- success -------| #
+            - determine <[roots].get[1].if_null[null]>
+
+
+
+gui_manager_get_parent:
+    ########################################################
+    # | ---  |             get parent             |  --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Required:  none                         --- | #
+    # | ---                                          --- | #
+    # | ---  Optional:  session-id | gui-id          --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Returns:  str                           --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Run: true | Await: true | Inject: false --- | #
+    # | ---                                          --- | #
+    ########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.parent save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+            - if ( <[missing-id]> ) || ( not <[id-type].equals[element]> ):
+                - define gui-id <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+                - if ( <[missing-id]> ):
+                    - if ( <[debug]> ):
+                        # |------- missing parameter 'gui-id' -------| #
+                        - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - determine null
+            # |------- data -------| #
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - define filtered <[ast].deep_keys.parse_tag[<[parse_value].split[.]>].filter_tag[<[filter_value].contains[<[gui-id]>]>].if_null[<list>]>
+            - if ( <[filtered].is_empty> ):
+                - if ( <[debug]> ):
+                    # |------- missing -------| #
+                    - define message "<[log_prefix]> could not locate '<[gui-id]>' in ast."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine null
+            - define branch <[filtered].get[1].if_null[<list>]>
+            - if ( <[branch].any> ):
+                - define parsed <[branch].get[<[branch].find[<[gui-id]>].sub[1].if_null[1]>].if_null[null]>
+                - if ( <[parsed]> != null ) || ( <[parsed]> != <[gui-id]> ):
+                    - determine <[parsed]>
+            - determine null
+
+
+
+gui_manager_get_siblings:
+    ########################################################
+    # | ---  |            get siblings            |  --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Required:  none                         --- | #
+    # | ---                                          --- | #
+    # | ---  Optional:  session-id | gui-id          --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Returns:  list | str                    --- | #
+    # | ---                                          --- | #
+    ########################################################
+    # | ---                                          --- | #
+    # | ---  Run: true | Await: true | Inject: false --- | #
+    # | ---                                          --- | #
+    ########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.siblings save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+            - if ( <[missing-id]> ) || ( not <[id-type].equals[element]> ):
+                - define gui-id <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+                - if ( <[missing-id]> ):
+                    - if ( <[debug]> ):
+                        # |------- missing parameter 'gui-id' -------| #
+                        - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - determine null
+            # |------- data -------| #
+            - ~run gui_manager_get_parent def.gui-id:<[gui-id]> context:<[context].if_null[null]> save:parent
+            - define parent <entry[parent].created_queue.determination.get[1].if_null[null]>
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - define siblings <[ast].deep_keys.filter_tag[<[filter_value].split[.].contains[<[parent]>]>].parse_tag[<[parse_value].after[<[parent]>.].before[.]>].if_null[<list>]>
+            # |------- parse ast -------| #
+            - if ( <[debug]> ) && ( <[siblings].is_empty> ):
+                # |------- missing siblings -------| #
+                - define message "<[log_prefix]> could not locate 'siblings' for '<[gui-id]>'."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine <[siblings]>
+
+
+
+gui_manager_get_lineage:
+    #########################################################
+    # | ---  |             get lineage             |  --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Required:  none                          --- | #
+    # | ---                                           --- | #
+    # | ---  Optional:  session-id | gui-id           --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Returns:  list | str                     --- | #
+    # | ---                                           --- | #
+    #########################################################
+    # | ---                                           --- | #
+    # | ---  Run: true | Await: true | Inject: false  --- | #
+    # | ---                                           --- | #
+    #########################################################
+    type: task
+    debug: false
+    definitions: session-id | gui-id | context
+    script:
+        # |------- flags -------| #
+        - define debug <player.flag[gui_manager.debug].if_null[false]>
+        - define missing-id <[gui-id].exists.and[<[gui-id].equals[null].not>].if_true[false].if_false[true]>
+        - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+        - if ( <[debug]> ):
+            - ~run gui_manager_log def.task:get.lineage save:log
+            - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+            - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+        - ~run gui_manager_get_session def.session-id:<[session-id].if_null[null]> save:session-id
+        - define session-id <entry[session-id].created_queue.determination.get[1].if_null[null]>
+        - if ( <[session-id]> == null ):
+            - if ( <[debug]> ):
+                - define message "<[log_prefix]> session-id missing."
+                - debug log <[message]>
+                - log <[message]> type:severe file:<[log_path]>
+            - determine null
+        - else:
+            # |------- validate -------| #
+            - if ( not <[missing-id]> ) && ( <[context].if_null[null]> != self ):
+                - ~run gui_manager_validate def.gui-id:<[gui-id]> save:validated
+                - define gui-id <entry[validated].created_queue.determination.get[1].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+            - if ( <[missing-id]> ) || ( not <[id-type].equals[element]> ):
+                - define gui-id <player.flag[gui_manager.sessions.<[session-id]>.nav.current].if_null[null]>
+                - define missing-id <[gui-id].equals[null].if_true[true].if_false[false]>
+                - define id-type <[missing-id].if_true[null].if_false[<[gui-id].object_type>]>
+                - if ( <[missing-id]> ):
+                    - if ( <[debug]> ):
+                        # |------- missing parameter 'gui-id' -------| #
+                        - define message "<[log_prefix]> parameter 'gui-id' is missing."
+                        - debug log <[message]>
+                        - log <[message]> type:severe file:<[log_path]>
+                    - determine null
+            # |------- data -------| #
+            - ~run gui_manager_get_parent def.gui-id:<[gui-id]> context:<[context].if_null[null]> save:parent
+            - define parent <entry[parent].created_queue.determination.get[1].if_null[null]>
+            - define ast <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[<map>]>
+            - define built <player.flag[gui_manager.sessions.<[session-id]>.built].if_null[<list>]>
+            - if ( <[ast]> == null ):
+                - if ( <[debug]> ) && ( <[built].any> ):
+                    # |------- missing ast -------| #
+                    - define message "<[log_prefix]> could not locate 'ast'. A critical error has occurred."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine null
+            # |------- check parent -------| #
+            - if ( <[ast].keys> contains <[gui-id]> ) && ( <[parent]> == null || <[parent]> == <empty> ):
+                # |------- empty -------| #
+                - determine <list>
+            # |------- parse lineage -------| #
+            - define lineages <[ast].deep_keys.filter_tag[<[filter_value].split[.].contains[<[gui-id]>]>].parse_tag[<[parse_value].split[.].get[1].to[<[parse_value].split[.].find[<[gui-id]>]>].separated_by[.]>].deduplicate.if_null[<list>]>
+            - if ( <[lineages].is_empty> ):
+                - if ( <[debug]> ):
+                    # |------- none -------| #
+                    - define message "<[log_prefix]> could not locate 'lineage' for '<[gui-id]>'."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+                - determine null
+            - else if ( <[lineages].size> > 1 ):
+                - if ( <[debug]> ):
+                    # |------- maximum -------| #
+                    - define message "<[log_prefix]> gui '<[gui-id]>' found in multiple lineages and is limited to one (1)."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+            - determine <[lineages].get[1].split[.].if_null[<list>]>
+
+
+
+    gui_manager_reset_ast:
+        #########################################################
+        # | ---  |              reset ast              |  --- | #
+        #########################################################
+        # | ---                                           --- | #
+        # | ---  Required:  none                          --- | #
+        # | ---                                           --- | #
+        # | ---  Optional:  session-id                    --- | #
+        # | ---                                           --- | #
+        #########################################################
+        # | ---                                           --- | #
+        # | ---  Returns:  bool                           --- | #
+        # | ---                                           --- | #
+        #########################################################
+        # | ---                                           --- | #
+        # | ---  Run: true | Await: true | Inject: true   --- | #
+        # | ---                                           --- | #
+        #########################################################
+        type: task
+        debug: false
+        definitions: session-id
+        script:
+            # |------- flags -------| #
+            - define debug <player.flag[gui_manager.debug].if_null[false]>
+            - if ( not <[session-id].exists> ):
+                - define session-id <player.flag[gui_manager.id].if_null[null]>
+            - if ( <[debug]> ):
+                - ~run gui_manager_log save:log
+                - define log_prefix <entry[log].created_queue.determination.get[1].get[1]>
+                - define log_path <entry[log].created_queue.determination.get[1].get[2]>
+            # |------- reset ast -------| #
+            - define cached <player.flag[gui_manager.sessions.<[session-id]>.ast].if_null[null]>
+            - ~run gui_manager path:build save:build
+            - if ( not <entry[build].created_queue.determination.get[1].if_null[false]> ):
+                # |------- failed -------| #
+                - if ( <[cached]> != null ):
+                    - flag <player> gui_manager.sessions.<[session-id]>.ast:<[cached]>
+                - if ( <[debug]> ):
+                    - define message "<[log_prefix]> ast reset failed."
+                    - debug log <[message]>
+                    - log <[message]> type:severe file:<[log_path]>
+            - else if ( <[debug]> ) && ( <player.flag[gui_manager.debug]> ):
+                # |------- success -------| #
+                - define message "<[log_prefix]> abstract syntax tree reset."
+                - debug log <[message]>
+                - log <[message]> type:info file:<[log_path]>
+
+
+
+# | ------------------------------------------------------------------------------------------------------------------------------ | #
+
+
